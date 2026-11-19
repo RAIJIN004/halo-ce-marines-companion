@@ -1,9 +1,11 @@
-# Halo CE — Marines Companion (v1.1.0)
+# Halo CE — Marines Companion (v1.3.0)
 
-Mod para la campaña retail de **Halo: Combat Evolved (2003, Gearbox)** que permite invocar marines armados en la posición del jugador y ordenarles que lo sigan caminando, sin subirse a vehículos.
+Mod para la campaña retail de **Halo: Combat Evolved (2003, Gearbox)** que permite invocar marines armados en la posición del jugador, ordenarles que lo sigan caminando sin subirse a vehículos y hacer que cacen a los enemigos que detecten.
 
 ## Estado
 
+✅ **v1.3.0** — caza automática: los marines avanzan hacia el encuentro enemigo que los ve.
+✅ **v1.2.0** — `ai_attack` / `ai_defend` al entrar y salir de combate.
 ✅ **v1.1.0** — modo combate automático añadido.
 ✅ **v1.0.0** — primera versión funcional.
 - Compatible con el juego retail original (PC, build 01.00.00.0564).
@@ -30,9 +32,21 @@ HaloScript no tiene una orden "camina hacia esta unidad y quédate ahí". `ai_go
 
 Apagar F8 destruye el objetivo: los marines se quedan donde están (no se los "baja" de nada).
 
-### Combate automático (v1.1.0)
+### Combate y caza automática (v1.3.0)
 
-Con F8 activo, el bucle consulta `ai_status mod_marines`. El motor devuelve **5** cuando un marine *ve* a un enemigo y **6** cuando está enganchado en combate. En ese caso el mod **deja de emitir la orden de seguimiento**: los marines pelean por su cuenta con la IA nativa, dejando de "seguir como patitos". Cuando el enemigo muere o se pierde de vista, `ai_status` baja y al siguiente ciclo vuelven a caminar hacia ti. No hace falta declarar encuentros enemigos ni nombres por misión: la detección es genérica y funciona en cualquier mapa.
+Con F8 activo, el bucle consulta `ai_status mod_marines`. El motor devuelve **5** cuando un marine *ve* a un enemigo y **6** cuando está enganchado en combate. En ese caso:
+
+- Se desactivan las maniobras de la escuadra (`ai_maneuver_enable 0`) y se da `ai_attack` / `ai_follow_target_disable`.
+- La cadena de caza recorre los encuentros de la misión y engancha el warthog señuelo al primer actor del encuentro con `ai_status >= 4` (`ai_actors` + `list_get`). Como el señuelo es invisible, los marines **caminan hacia el enemigo** con el mismo mecanismo del escolta, sin montarse.
+- Se emiten 8 órdenes por ciclo (antes 4) para reducir los trabones al caminar.
+
+Al terminar el combate, el señuelo vuelve a engancharse al jugador y los marines reanudan el escolta.
+
+El motor no tiene un estado de IA "atacar/avanzar": `ai_attack` solo cambia el modo de la escuadra y `search` se traduce en quedarse quieto. Por eso el movimiento ofensivo se consigue redirigiendo el objetivo del warthog invisible.
+
+> En `a10` el techo de 19.001 nodos del motor retail solo permite incluir 9 encuentros en la cadena (hay que quitar los scripts de migración por salas, que ya no se usaban). El resto de misiones incluyen todos sus encuentros de combate.
+
+El "retirada" que se escucha a veces no es una huida: es la línea de voz que el motor reproduce al dar la orden de vehículo bajo fuego.
 
 ## Mapas incluidos
 
@@ -58,6 +72,14 @@ Los scripts están pensados para ejecutarse desde `Halo-Editor\Proyectos\a10\her
 ```
 
 Eso extrae los tags del `.map`, recupera el HSC original incrustado en el tag, parchea el escenario (nombres, ranuras, dummies, señuelo, encuentro), añade el bloque del mod, compila, aplica `runtime = -1` al encuentro y construye el mapa.
+
+Para añadir la caza automática a un mapa ya moddeado:
+
+```powershell
+.\aplicar-caza-mision.ps1 -Map b40
+```
+
+Genera la cadena de encuentros desde el tag del escenario, reemplaza el bucle de escolta y vuelve a compilar. Los CRCs instalados de cada versión están en `documentacion/ESTADO.md`.
 
 Requisitos: Invader en `C:\Users\jhonv\Downloads\Halo-Editor` y los `.map` retail en `C:\Users\jhonv\Downloads\Halo-PC\MAPS` (rutas configurables dentro de los scripts).
 

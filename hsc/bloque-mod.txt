@@ -20,6 +20,17 @@
 ;   Nota: F9/F10 (pruebas) y la migracion por salas se quitaron para
 ;      cumplir el techo de 19001 nodos del motor retail.
 ;
+;  6) CAZA AUTOMATICA (v1.3.0): en combate, el bucle detecta que encuentro
+;     enemigo tiene `ai_status >= 4` y engancha el warthog senuelo a su
+;     primer actor (`ai_actors` + `list_get`). Los marines caminan hacia
+;     ese enemigo con la misma mecanica del escolta, sin subirse. Al
+;     terminar el combate el senuelo vuelve a engancharse al jugador.
+;     Las maniobras de la escuadra se desactivan (0) permanentemente:
+;     generaban la voz de "retirada" al dar la orden de vehiculo bajo
+;     fuego. 8 ordenes por ciclo (antes 4) reducen los trabones.
+;     Nota: en a10 el techo de 19001 nodos solo permite 9 encuentros en
+;     la cadena; el resto de misiones usan todos los suyos.
+;
 ; LOGICA (copiada de como lo hace el Halo original)
 ;   La guia de Halo CE lo explica asi: para que un encuentro siga
 ;   al jugador se necesitan
@@ -312,12 +323,20 @@
           ; pasar a MODO ATAQUE: el motor hace que los marines avancen
           ; hacia el enemigo visible en vez de quedarse en su puesto
           (if (= mod_marines_combat 0)
-            (ai_attack mod_marines))
+            (begin
+              ; atacar, pero SIN maniobras: las reglas del encuentro
+              ; copiado mandan "retirada" al bajar la fuerza
+              (ai_attack mod_marines)
+              (ai_maneuver_enable mod_marines 0)
+              (ai_follow_target_disable mod_marines)))
           (set mod_marines_combat 1))
         (begin
-          ; combate terminado: volver a modo defensa y reanudar seguimiento
+          ; combate terminado: restaurar maniobras y seguimiento
           (if (= mod_marines_combat 1)
-            (ai_defend mod_marines))
+            (begin
+              (ai_maneuver_enable mod_marines 1)
+              (ai_follow_target_players mod_marines)
+              (ai_defend mod_marines)))
           (set mod_marines_combat 0)
           (objects_detach modlure moddum01)
           (objects_detach modlure moddum02)
@@ -750,11 +769,12 @@
 ;   8) invader-bludgeon -T everything para reparar tags rotos
 ;      de la extraccion (indices, rangos, lens flares)
 ;
-; CRC finales instalados en Halo-PC\MAPS:
-;   a10 0xCEFEE480   a30 0x6796B4AB   a50 0xAA27A613
-;   b30 0x5AE2614F   b40 0xC53BCE57   c10 0xA61319E3
-;   c20 0xD8E18758   c40 0xDD8B768E   d20 0x92E6D826
-;   d40 0x0407D7A3
-; Los 10 verificados: encuentro mod_marines con runtime=-1 en cache.
+; CRC finales instalados en Halo-PC\MAPS (v1.3.0, caza automatica):
+;   a10 0x24C1DC26   a30 0xDFF9A736   a50 0xE6186431
+;   b30 0xA677ADB1   b40 0x38BDB14B   c10 0xC9A9AD50
+;   c20 0xD8E18758   c40 0x56943CA2   d20 0x92E6D826
+;   d40 0x94084A5F
+; c20/d20 conservan su build anterior (bloqueos documentados).
+; Los 8 verificados: encuentro mod_marines con runtime=-1 en cache.
 ;
 ; Nota: no habia archivos para a20, a40, b10, b20, c30, c50, d30.
