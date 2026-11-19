@@ -308,8 +308,16 @@
   (if (= mod_marines_escort 1)
     (begin
       (if (>= (ai_status mod_marines) 5)
-        (set mod_marines_combat 1)
         (begin
+          ; pasar a MODO ATAQUE: el motor hace que los marines avancen
+          ; hacia el enemigo visible en vez de quedarse en su puesto
+          (if (= mod_marines_combat 0)
+            (ai_attack mod_marines))
+          (set mod_marines_combat 1))
+        (begin
+          ; combate terminado: volver a modo defensa y reanudar seguimiento
+          (if (= mod_marines_combat 1)
+            (ai_defend mod_marines))
           (set mod_marines_combat 0)
           (objects_detach modlure moddum01)
           (objects_detach modlure moddum02)

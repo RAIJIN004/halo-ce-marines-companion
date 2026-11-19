@@ -35,8 +35,11 @@
   (if (= mod_marines_escort 1)
     (begin
       (if (>= (ai_status mod_marines) 5)
-        (set mod_marines_combat 1)
         (begin
+          (if (= mod_marines_combat 0) (ai_attack mod_marines))
+          (set mod_marines_combat 1))
+        (begin
+          (if (= mod_marines_combat 1) (ai_defend mod_marines))
           (set mod_marines_combat 0)
           (objects_detach modlure moddum01)
           (objects_detach modlure moddum02)
