@@ -140,6 +140,7 @@
 ; modo escolta: 0 = apagado, 1 = re-evaluar posiciones cada segundo
 ; se activa automaticamente con F6 al crear marines
 (global short mod_marines_escort 0)
+(global short mod_marines_combat 0)
 (global short mod_marines_escort_tick 0)
 (global short mod_marines_escort_wait 0)
 
@@ -296,20 +297,31 @@
 ; reciban la orden otra vez casi al instante y no se queden parados
 ; mucho rato (era lo que causaba las paradas frecuentes).
 ; F8 lo enciende/apaga. F6 NO toca nada de esto (spawn siempre seguro).
+; MODO COMBATE AUTOMATICO:
+; ai_status devuelve 5 si algun marine VE un enemigo y 6 si esta
+; enganchado en combate. Cuando eso pasa, NO damos la orden de ir al
+; vehiculo: los marines pelean por su cuenta (la IA del motor elige
+; al enemigo visible). Al morir/perder al enemigo, ai_status baja y
+; el siguiente ciclo reanuda la marcha hacia ti.
 (script continuous mod_marines_chase_loop
   (sleep 3)
   (if (= mod_marines_escort 1)
     (begin
-      (objects_detach modlure moddum01)
-      (objects_detach modlure moddum02)
-      (objects_detach modlure moddum03)
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (unit_enter_vehicle moddum01 modlure "W-driver")
-      (unit_enter_vehicle moddum02 modlure "W-passenger")
-      (unit_enter_vehicle moddum03 modlure "W-gunner")))
+      (if (>= (ai_status mod_marines) 5)
+        (set mod_marines_combat 1)
+        (begin
+          (set mod_marines_combat 0)
+          (objects_detach modlure moddum01)
+          (objects_detach modlure moddum02)
+          (objects_detach modlure moddum03)
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (unit_enter_vehicle moddum01 modlure "W-driver")
+          (unit_enter_vehicle moddum02 modlure "W-passenger")
+          (unit_enter_vehicle moddum03 modlure "W-gunner"))))
+    )
 )
 
 ; --- F6: dos marines nuevos a tus pies ---------------------------

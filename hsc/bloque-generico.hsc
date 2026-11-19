@@ -6,6 +6,7 @@
 (global short mod_marines_accion 0)
 (global short mod_marines_ready 0)
 (global short mod_marines_escort 0)
+(global short mod_marines_combat 0)
 
 (script dormant mod_marines_boot
   (sleep 120)
@@ -28,21 +29,26 @@
 
 ; escolta: 3 dummies bloquean los 3 asientos; cada ciclo se sueltan,
 ; se da la orden y se sientan otra vez. Sin override = no reinicia paths.
+; combate automatico: ai_status>=5 (enemigo visible/enganchado) pausa el seguimiento
 (script continuous mod_marines_chase_loop
   (sleep 3)
   (if (= mod_marines_escort 1)
     (begin
-      (objects_detach modlure moddum01)
-      (objects_detach modlure moddum02)
-      (objects_detach modlure moddum03)
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (ai_go_to_vehicle mod_marines modlure "")
-      (unit_enter_vehicle moddum01 modlure "W-driver")
-      (unit_enter_vehicle moddum02 modlure "W-passenger")
-      (unit_enter_vehicle moddum03 modlure "W-gunner")))
-)
+      (if (>= (ai_status mod_marines) 5)
+        (set mod_marines_combat 1)
+        (begin
+          (set mod_marines_combat 0)
+          (objects_detach modlure moddum01)
+          (objects_detach modlure moddum02)
+          (objects_detach modlure moddum03)
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (ai_go_to_vehicle mod_marines modlure "")
+          (unit_enter_vehicle moddum01 modlure "W-driver")
+          (unit_enter_vehicle moddum02 modlure "W-passenger")
+          (unit_enter_vehicle moddum03 modlure "W-gunner"))))
+))
 
 ; F6: crear marines en los pies del jugador (12 pares de ranuras)
 (script static void mod_marines_aqui
@@ -265,6 +271,9 @@
           (object_create_anew moddum01)
           (object_create_anew moddum02)
           (object_create_anew moddum03)
+          (object_set_scale moddum01 0.01 0)
+          (object_set_scale moddum02 0.01 0)
+          (object_set_scale moddum03 0.01 0)
           (object_set_collideable moddum01 0)
           (object_set_collideable moddum02 0)
           (object_set_collideable moddum03 0)

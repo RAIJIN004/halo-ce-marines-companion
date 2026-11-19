@@ -23,5 +23,6 @@ Variantes viables:
 
 1. **Múltiples objetivos**: añadir 2–3 señuelos con nombres (`modlure_a`, `modlure_b`, ...) y una global `mod_marines_target` que decida cuál se usa en el bucle.
 2. **Ir a zona**: reutilizar el patrón de volúmenes por sala que ya existía en versiones anteriores del mod (`mz_*`), o usar puntos fijos con `object_teleport`.
-3. **Combate**: al llegar, destruir el señuelo y llamar `ai_attack <encuentro> <objetivo>`; cuando el encuentro objetivo muera o se pierda de vista, recrear el señuelo y volver a seguir.
-4. **Persistencia entre misiones**: los globals viven por misión; no hay forma de Guardar estado entre mapas con HaloScript puro.
+3. **Combate**: ✅ **hecho en v1.1.0** usando `ai_status >= 5` como detector genético de "enemigo visible/enganchado". El bucle deja de emitir la orden de vehículo y la IA nativa pelea. Al bajar `ai_status`, se reanuda el seguimiento. No hace falta declarar encuentros por misión.
+4. **Multi-objetivo**: varios señuelos con nombres (`modlure_a`, `modlure_b`, ...) y una global `mod_marines_target` para elegir cuál se usa en el bucle. Permite "ir a la zona A, luego a la B".
+5. **Persistencia entre misiones**: los globals viven por misión; no hay forma de Guardar estado entre mapas con HaloScript puro.

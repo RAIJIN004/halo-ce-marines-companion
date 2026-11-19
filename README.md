@@ -1,9 +1,10 @@
-# Halo CE — Marines Companion (v1.0.0)
+# Halo CE — Marines Companion (v1.1.0)
 
 Mod para la campaña retail de **Halo: Combat Evolved (2003, Gearbox)** que permite invocar marines armados en la posición del jugador y ordenarles que lo sigan caminando, sin subirse a vehículos.
 
 ## Estado
 
+✅ **v1.1.0** — modo combate automático añadido.
 ✅ **v1.0.0** — primera versión funcional.
 - Compatible con el juego retail original (PC, build 01.00.00.0564).
 - El multijugador en línea sigue funcionando: no se tocan mapas de multiplayer ni el `globals` compartido.
@@ -28,6 +29,10 @@ HaloScript no tiene una orden "camina hacia esta unidad y quédate ahí". `ai_go
 5. Si el jugador se aleja, el vehículo se mueve con él y la siguiente orden reanuda la marcha.
 
 Apagar F8 destruye el objetivo: los marines se quedan donde están (no se los "baja" de nada).
+
+### Combate automático (v1.1.0)
+
+Con F8 activo, el bucle consulta `ai_status mod_marines`. El motor devuelve **5** cuando un marine *ve* a un enemigo y **6** cuando está enganchado en combate. En ese caso el mod **deja de emitir la orden de seguimiento**: los marines pelean por su cuenta con la IA nativa, dejando de "seguir como patitos". Cuando el enemigo muere o se pierde de vista, `ai_status` baja y al siguiente ciclo vuelven a caminar hacia ti. No hace falta declarar encuentros enemigos ni nombres por misión: la detección es genérica y funciona en cualquier mapa.
 
 ## Mapas incluidos
 

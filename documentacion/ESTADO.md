@@ -1,4 +1,6 @@
-# Estado de los mapas (v1.0.0)
+# Estado de los mapas (v1.1.0)
+
+v1.1.0 añade combate automático (`ai_status >= 5` pausa el seguimiento). Mapas con build v1.1.0: `a10` (`0xC8B958B9`), `a30` (`0xE924C28D`), `a50` (`0x990EFF56`), `b30` (`0x01F411FF`), `b40` (`0xCEC64D0A`), `c10` (`0x9A91B413`), `c40` (`0xC982381C`), `d40` (`0x198E6D09`). Aún no instalados porque el juego estaba abierto.
 
 Todos los mapas verificados tienen el encuentro `mod_marines` con `runtime = -1` en el caché.
 
