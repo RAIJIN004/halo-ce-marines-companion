@@ -1,0 +1,740 @@
+; ============================================================
+; MOD: marines que te acompasan en "El pilar del otono"
+;      encuentro "mod_marines"
+;
+; QUE HACE
+;   1) Al empezar aparecen 3 marines junto a tu capsula.
+;   2) Andan solos entre salas siguiendo al jugador (migracion
+;      automatica de la IA, la misma que usa el nivel original).
+;   3) F6 hace aparecer DOS marines NUEVOS justo donde estas (a tus
+;      pies), alla donde estes y en cualquier sala (no borra ni
+;      sustituye a los que ya tienes). Cada pulsacion gasta una pareja
+;      de ranuras: hay 12 pulsaciones. F6 NO ordena seguir: solo coloca.
+;   4) F7 ordena seguir: todos los que tengas vienen andando hasta ti.
+;   5) F8 enciende/apaga el MODO ESCOLTA: los marines caminan hacia ti
+;      (pathfinding directo a un vehiculo senuelo pegado a tus pies) pero
+;      NUNCA se suben: un dummy ocupa el unico asiento que se usa
+;      (W-driver). Al apagar F8 el objetivo desaparece y se quedan donde
+;      estan (no se bajan de nada). F6 no toca el escolta, asi el spawn
+;      siempre es seguro.
+;   Nota: F9/F10 (pruebas) y la migracion por salas se quitaron para
+;      cumplir el techo de 19001 nodos del motor retail.
+;
+; LOGICA (copiada de como lo hace el Halo original)
+;   La guia de Halo CE lo explica asi: para que un encuentro siga
+;   al jugador se necesitan
+;     - grupos de posiciones de tiro, una letra por zona (a..r aqui);
+;     - "escuadrones vacios" por letra: sin tipo de actor, sin puntos
+;       de aparicion, con estado inicial, estado de retorno y
+;       automatic_migration activado, y con la letra de su grupo en
+;       las SEIS mascaras de estado (attacking, attacking_search,
+;       attacking_guard, defending, defending_search, defending_guard);
+;     - escuadrones normales (con actores) para colocarlos, tambien
+;       con automatic_migration;
+;     - y UNA llamada a (ai_follow_target_players <encuentro>).
+;   La IA va migrando sola al escuadron cuya letra esta mas cerca
+;   del jugador. Es exactamente la configuracion del encuentro retail
+;   "containment_3" de este mismo nivel (init_marine/rear/middle/
+;   forward), que es el que hace que los marines te sigan.
+;
+; QUE DICE LA GUIA, TEXTO LITERAL (halomaps, "AI following the player")
+;   "Just add this line to a startup script for each AI encounter that
+;    you want to follow the player: (ai_follow_target_players )"
+;   "All that is specified in these squads is the initial state, return
+;    state, and automatic migration, which HAS to be checked."
+;   "Finally, the most important part is to specify the corresponding
+;    firing position group letter for each empty squad for each AI
+;    state (attacking, attacking guard, defending, etc.)"
+;   "In these squads [las de actores], automatic migration has to be
+;    checked as well, and the firing position group letters should be
+;    set ONLY to the firing position group closest to the squad's
+;    spawn points."
+;   "Automatic migration gives the encounter's actors the freedom to
+;    switch from one squad to another at will. This is what lets them
+;    follow the player, since now they can move (migrate) to the
+;    firing position group's squad that is closest to the player."
+;
+;   Consecuencia: la migracion es DENTRO DEL MISMO ENCUENTRO. No hace
+;   falta (ai_migrate): eso solo se usa cuando los actores viven en
+;   OTRO encuentro (el nivel original lo hace una vez en
+;   containment_2 -> "stairs", no cada rato). Aqui los actores y los
+;   escuadrones vacios estan en el mismo encuentro, asi que el script
+;   solo coloca y pide seguimiento. Nada mas.
+;
+;   Comparacion con el nivel original (misma mision):
+;     containment_3 -> (ai_place containment_3)
+;                      (ai_follow_target_players containment_3)
+;                      sin migracion manual. Es el patron que usamos.
+;     containment_2 -> escuadrones vacios a..h; los actores estan en
+;                      "stairs"; (ai_migrate stairs containment_2) UNA
+;                      vez y luego (ai_follow_target_players).
+;
+; POR QUE SALIAN EN POSE T (congelados, sin andar)
+;   Un encuentro colocado puede quedar DORMIDO si el motor cree que no
+;   hay ningun jugador cerca. La IA dormida no se actualiza: el biped se
+;   queda en la pose base (la "pose T") y no anda ni hace nada. Es el
+;   mismo caso que describe el hilo de halomaps "AI\biped in t-pose
+;   during cutscenes" (2019) y la respuesta que dan alli:
+;     (ai_force_active AI_ENCOUNTER_NAME TRUE)
+;   La documentacion oficial de Halo 1 (c20, h1/scripting) dice:
+;     ai_force_active <ai> <boolean>
+;       "Forces an encounter to remain active (i.e. not freeze in place)
+;        even if there are no players nearby"
+;     ai_allow_dormant <ai> <boolean>
+;       "Either enables or disables automatic dormancy for a group of
+;        actors"
+;   Y el propio nivel original usa esa misma receta en esta mision:
+;     crossfire:  (ai_place crossfire) ... (ai_force_active crossfire 1)
+;     loop:       (ai_place loop) ...     (ai_force_active loop 1)
+;   Por eso aqui, cada vez que se coloca el encuentro se hace
+;   (ai_force_active mod_marines 1) y ademas (ai_allow_dormant
+;   mod_marines 0), que es la forma de decir "este encuentro nunca se
+;   duerme". Como la orden es sobre el ENCUENTRO, vale para todos sus
+;   escuadrones: los 3 iniciales, los de F6 y los 6 tipos de F9.
+;
+;   (ai_reconnect) y (ai_automatic_migration_target) no aparecen ni en
+;   la guia ni en el script original, asi que NO se usan.
+;
+; COMO SE SABE EN QUE SALA ESTAS
+;   El nivel tiene 14 volumenes de disparo propios (mz_b ... mz_n y
+;   mz_cryo), uno por sala y del tamano de la sala (herramientas\
+;   volumenes-zona.ps1). Cada medio segundo se prueban del mas grande
+;   al mas pequeno, asi gana siempre el volumen mas especifico, y la
+;   sala solo cambia cuando el resultado se repite 3 lecturas seguidas
+;   (para no parpadear al cruzar una puerta).
+;
+; ESTRUCTURA DEL ENCUENTRO (39)
+;   squad[0]      marines  -> los 3 iniciales y TODOS los que crea F6
+;                             (ai_attach los mete en este escuadron)
+;   squad[1..17]  adv_b..adv_r -> escuadrones vacios con la letra de
+;                             cada zona (destinos de la migracion
+;                             automatica)
+;   squad[18..51] sp_*1/2  -> 2 actores por sala; hoy solo se usan
+;                             sp_p1..sp_r2 (prueba de tipos de F9)
+;
+; ESTRUCTURA DEL TAG (fuera del encuentro)
+;   bipeds[107..130]       -> 24 bipeds NO colocados (no salen solos al
+;                             empezar; solo existen si un script los crea)
+;   object_names[379..402] -> sus nombres: mod_m01..mod_m24
+;   Los anade herramientas/agregar-slots-spawn.ps1. Cada ranura es un
+;   characters\marine_armored\marine_armored (paleta de bipeds 1), con
+;   fusil de asalto. F6 los "despierta" y los lleva a tus pies; ver el
+;   comentario largo de mod_marines_aqui.
+;
+; TECLAS (chimera.ini):  F6 = 2 marines nuevos a tus pies (sin seguir)
+;                        F7 = seguir / venir aqui
+;                        F9 = prueba de tipos de personaje
+;                        F10 = prueba de control (elite retail)
+; ============================================================
+(global short mod_marines_request 0)
+(global short mod_marines_slot 0)
+(global short mod_marines_accion 0)
+(global short mod_marines_ready 0)
+(global short mod_marines_zone 14)
+(global short mod_marines_stage 14)
+(global short mod_marines_cand 0)
+(global short mod_marines_pending 0)
+(global short mod_marines_pcount 0)
+; modo de seguimiento: 0 = ai_follow_target_players (F6/F7), 1 = ai_follow_target_unit (F8)
+(global short mod_marines_unit_follow 0)
+; modo escolta: 0 = apagado, 1 = re-evaluar posiciones cada segundo
+; se activa automaticamente con F6 al crear marines
+(global short mod_marines_escort 0)
+(global short mod_marines_escort_tick 0)
+(global short mod_marines_escort_wait 0)
+
+; --- preparar la IA ---------------------------------------------
+; La guia no pide ninguna llamada de preparacion: la configuracion
+; vive en el tag del escenario (escenarios y posiciones de tiro).
+
+; --- aparicion inicial ------------------------------------------
+; La cinematica inicial avisa al devolverte el control (wake). Hay que
+; esperar 4 s: colocados en el instante exacto salen sin animacion.
+(script dormant mod_marines_boot
+  (sleep 120)
+  (mod_marines_place)
+)
+
+; seguro: si el aviso de la cinematica no llegara, aparecen igual
+(script continuous mod_marines_seguro
+  (sleep 2400)
+  (if (= mod_marines_ready 0)
+    (mod_marines_place))
+)
+
+(script static void mod_marines_place
+  ; resetear contador de ranuras F6 al empezar el nivel
+  (set mod_marines_slot 0)
+  (ai_place mod_marines/marines)
+  ; el encuentro no debe quedar dormido (si no, pose T y quietos)
+  (ai_force_active mod_marines 1)
+  (ai_allow_dormant mod_marines 0)
+  ; tolerancia de migracion 0: en cuanto el grupo mas cercano al jugador
+  ; cambia un mundo unit, cambian de grupo (si no, se quedan parados a
+  ; los 2 world units que viene por defecto)
+  (ai_follow_distance mod_marines 0)
+  (set mod_marines_ready 1)
+  ; IMPORTANTE: el nivel original NUNCA ordena seguir en el mismo
+  ; instante en que coloca. containment_3 coloca al pasar un trigger y
+  ; ordena seguir bastante despues. Aqui se deja 1 s (30 ticks) para
+  ; que los actores terminen de nacer antes de darles la orden.
+  (sleep 30)
+  (ai_follow_target_players mod_marines)
+)
+
+; --- sala en la que estas ---------------------------------------
+; Prueba los volumenes del mas grande al mas pequeno: el ultimo que
+; coincida es el mas especifico (el de la sala, no el del pasillo).
+(script static void mod_marines_nearest
+  (set mod_marines_cand 0)
+; ZONAS-INICIO
+  (if (volume_test_objects mz_l (players)) (set mod_marines_cand 11))
+  (if (volume_test_objects mz_m (players)) (set mod_marines_cand 12))
+  (if (volume_test_objects mz_cryo (players)) (set mod_marines_cand 14))
+  (if (volume_test_objects mz_h (players)) (set mod_marines_cand 7))
+  (if (volume_test_objects mz_i (players)) (set mod_marines_cand 8))
+  (if (volume_test_objects mz_f (players)) (set mod_marines_cand 5))
+  (if (volume_test_objects mz_g (players)) (set mod_marines_cand 6))
+  (if (volume_test_objects mz_d (players)) (set mod_marines_cand 3))
+  (if (volume_test_objects mz_e (players)) (set mod_marines_cand 4))
+  (if (volume_test_objects mz_n (players)) (set mod_marines_cand 13))
+  (if (volume_test_objects mz_b (players)) (set mod_marines_cand 1))
+  (if (volume_test_objects mz_c (players)) (set mod_marines_cand 2))
+  (if (volume_test_objects mz_j (players)) (set mod_marines_cand 9))
+  (if (volume_test_objects mz_k (players)) (set mod_marines_cand 10))
+; ZONAS-FIN
+)
+
+; --- llevar a los marines a la sala en la que estas --------------
+; (ai_migrate <encuentro> <escuadron>) es la orden documentada:
+; "makes all or part of an encounter move to another encounter"
+; (admite tambien un escuadron como destino). El destino es el
+; escuadron VACIO de la letra de tu sala, cuyas posiciones de tiro son
+; las de esa sala; por eso al migrar vienen andando hasta aqui.
+; El nivel original usa esta misma orden en containment_2:
+;   (ai_migrate stairs containment_2)
+;
+; OJO: esta funcion esta DESACTIVADA de momento (no se llama desde
+; ningun sitio). Se deja escrita porque es la orden correcta para la
+; migracion, pero primero hay que saber si es la causante de que los
+; actores se queden quietos: migrar recien colocado a un escuadron
+; vacio (normal_diff_count = 0) podria dejar al actor sin puesto.
+; (ai_migrate) por sala: DEPRECADO. Se usaba para mover los actores al escuadron
+; vacio de la letra de la sala. Reemplazado por mod_marines_migrar_sala (misma
+; tabla de letras, sin duplicar codigo). Este bloque se conserva como referencia
+; local de documentacion, no se compila.
+
+(script static void mod_marines_scan
+  (begin
+    (mod_marines_nearest)
+    (if (= mod_marines_cand 0)
+      (begin (set mod_marines_pending 0) (set mod_marines_pcount 0))
+      (begin
+        (if (= mod_marines_cand mod_marines_pending)
+          (set mod_marines_pcount (+ mod_marines_pcount 1))
+          (begin
+            (set mod_marines_pending mod_marines_cand)
+            (set mod_marines_pcount 0)))
+        (if
+          (and
+            (>= mod_marines_pcount 3)
+            (!= mod_marines_cand mod_marines_zone)
+          )
+          (begin
+            (set mod_marines_zone mod_marines_cand)
+            (set mod_marines_pending 0)
+            (set mod_marines_pcount 0))
+        )
+      )
+    )
+    ; al entrar en otra sala se les manda a la nueva sala
+    (if
+      (and
+        (> mod_marines_zone 0)
+        (!= mod_marines_zone mod_marines_stage)
+      )
+      (begin
+        (set mod_marines_stage mod_marines_zone)
+      )
+    )
+  )
+)
+
+(script continuous mod_marines_route
+  (sleep 15)
+  (if (= mod_marines_ready 1)
+    (mod_marines_scan))
+)
+
+; --- MODO ESCOLTA: asiento bloqueado, objetivo siempre delante ------
+; Confirmado en OpenCE (action_vehicle.c): el motor da la orden de ir
+; a un vehiculo SOLO si hay un asiento libre (vehicle_scripting_find_
+; available_seats). Una vez dada, el actor pathfindea HACIA el vehiculo
+; aunque el asiento se llene despues (scripted_request = TRUE). Y al
+; llegar, action_vehicle_evaluate_seat ve el asiento ocupado y termina
+; la accion con vehicle_entry_failed: el marine se detiene a tus pies
+; SIN subirse y SIN morir (no borramos el vehiculo, que mataria al
+; ocupante por ser su hijo en el arbol de objetos).
+;
+; Truco: TRES dummies (moddum01..03) estan siempre sentados en los tres
+; asientos del warthog (W-driver, W-passenger, W-gunner), asi nadie puede
+; subirse. Cada ciclo:
+;   1) objects_detach de los 3 dummies -> los 3 asientos quedan LIBRES
+;      AL INSTANTE (object_detach limpia el padre).
+;   2) ai_go_to_vehicle (SIN override) -> da la orden a un marine por
+;      asiento libre. Al no ser override, NO reinicia el path de los que
+;      ya iban caminando (eso era lo que causaba las "micro caminatas").
+;      Se llama 3 veces por ciclo: como los que ya van se ordenan al final
+;      (qsort), cada llamada alcanza a marines distintos -> en 3 rondas
+;      se ordenan hasta 9 marines por ciclo.
+;   3) unit_enter_vehicle de los 3 dummies -> se bloquean los asientos
+;      otra vez antes de que nadie llegue.
+; El vehiculo va pegado al jugador: si te alejas, el objetivo se mueve
+; contigo y el siguiente ciclo re-emite la orden -> te siguen andando.
+; El ciclo es corto (~0.1 s, sleep 3) y con 4 rondas (hasta 12 marines
+; ordenados por ciclo) para que, en cuanto una accion falla al llegar,
+; reciban la orden otra vez casi al instante y no se queden parados
+; mucho rato (era lo que causaba las paradas frecuentes).
+; F8 lo enciende/apaga. F6 NO toca nada de esto (spawn siempre seguro).
+(script continuous mod_marines_chase_loop
+  (sleep 3)
+  (if (= mod_marines_escort 1)
+    (begin
+      (objects_detach modlure moddum01)
+      (objects_detach modlure moddum02)
+      (objects_detach modlure moddum03)
+      (ai_go_to_vehicle mod_marines modlure "")
+      (ai_go_to_vehicle mod_marines modlure "")
+      (ai_go_to_vehicle mod_marines modlure "")
+      (ai_go_to_vehicle mod_marines modlure "")
+      (unit_enter_vehicle moddum01 modlure "W-driver")
+      (unit_enter_vehicle moddum02 modlure "W-passenger")
+      (unit_enter_vehicle moddum03 modlure "W-gunner")))
+)
+
+; --- F6: dos marines nuevos a tus pies ---------------------------
+; Por que no se usa (ai_place): ai_place pone al actor en las
+; POSICIONES DE TIRO del escuadron, que son puntos fijos del mapa. Para
+; que aparezcan donde estas hay que crear el biped y llevarlo hasta el
+; jugador. La receta son estas cuatro ordenes, todas del Halo original:
+;
+;   (object_create_anew <ranura>)
+;      crea el biped de esa ranura en la posicion que tiene en el tag
+;      (un punto del suelo de la bahia criogenica). Tambien le pone sus
+;      armas: el motor llama a unit_add_initial_weapons, que lee
+;      "weapons[]" del tag del biped (marine_armored = fusil de asalto).
+;
+;   (objects_attach (player0) "" <ranura> "")
+;      lo cuelga de la RAIZ del jugador: el nombre de marca vacio vale
+;      como nodo 0, y objects_scripting_attach/object_attach_to_marker
+;      le pone la posicion relativa del marcador, o sea (0,0,0). El
+;      biped pasa a estar justo en los pies del jugador.
+;
+;   (objects_detach (player0) <ranura>)
+;      lo suelta conservando la posicion del mundo: object_detach
+;      recalcula la matriz con el nodo del padre, le pasa la velocidad,
+;      lo reconecta al mapa (object_reconnect_to_map) y lo activa.
+;
+;   (ai_attach <ranura> mod_marines/marines)
+;      convierte ese biped en ACTOR de verdad: ai_scripting_attach_unit
+;      toma el tipo de actor de la paleta del escuadron 0 ("marines") y
+;      llama a actor_create_for_unit -> encounter_attach_actor. Desde
+;      ese momento anda, apunta y obedece el seguimiento del encuentro.
+;
+; object_create_anew BORRA el objeto anterior con el mismo nombre, asi
+; que cada pulsacion gasta una ranura PROPIA (mod_m01..mod_m24 = 12
+; pulsaciones de 2 marines): nunca se pisa un marine vivo. Cuando se
+; acaban las ranuras F6 ya no hace nada, y tampoco borra nada.
+;
+; Los nombres no pueden ser dinamicos: HaloScript no tiene variables de
+; tipo "nombre de objeto", asi que los 12 casos van escritos uno a uno.
+; Las ranuras las crea herramientas/agregar-slots-spawn.ps1, que anade
+; al escenario 24 bipeds no colocados y sus 24 nombres.
+(script static void mod_marines_aqui
+  (if (= mod_marines_slot 0)
+    (begin
+      (object_create_anew mod_m01)
+      (objects_attach (player0) "" mod_m01 "")
+      (objects_detach (player0) mod_m01)
+      (ai_attach mod_m01 mod_marines/marines)
+      (object_create_anew mod_m02)
+      (objects_attach (player0) "" mod_m02 "")
+      (objects_detach (player0) mod_m02)
+      (ai_attach mod_m02 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 2)
+    (begin
+      (object_create_anew mod_m03)
+      (objects_attach (player0) "" mod_m03 "")
+      (objects_detach (player0) mod_m03)
+      (ai_attach mod_m03 mod_marines/marines)
+      (object_create_anew mod_m04)
+      (objects_attach (player0) "" mod_m04 "")
+      (objects_detach (player0) mod_m04)
+      (ai_attach mod_m04 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 4)
+    (begin
+      (object_create_anew mod_m05)
+      (objects_attach (player0) "" mod_m05 "")
+      (objects_detach (player0) mod_m05)
+      (ai_attach mod_m05 mod_marines/marines)
+      (object_create_anew mod_m06)
+      (objects_attach (player0) "" mod_m06 "")
+      (objects_detach (player0) mod_m06)
+      (ai_attach mod_m06 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 6)
+    (begin
+      (object_create_anew mod_m07)
+      (objects_attach (player0) "" mod_m07 "")
+      (objects_detach (player0) mod_m07)
+      (ai_attach mod_m07 mod_marines/marines)
+      (object_create_anew mod_m08)
+      (objects_attach (player0) "" mod_m08 "")
+      (objects_detach (player0) mod_m08)
+      (ai_attach mod_m08 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 8)
+    (begin
+      (object_create_anew mod_m09)
+      (objects_attach (player0) "" mod_m09 "")
+      (objects_detach (player0) mod_m09)
+      (ai_attach mod_m09 mod_marines/marines)
+      (object_create_anew mod_m10)
+      (objects_attach (player0) "" mod_m10 "")
+      (objects_detach (player0) mod_m10)
+      (ai_attach mod_m10 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 10)
+    (begin
+      (object_create_anew mod_m11)
+      (objects_attach (player0) "" mod_m11 "")
+      (objects_detach (player0) mod_m11)
+      (ai_attach mod_m11 mod_marines/marines)
+      (object_create_anew mod_m12)
+      (objects_attach (player0) "" mod_m12 "")
+      (objects_detach (player0) mod_m12)
+      (ai_attach mod_m12 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 12)
+    (begin
+      (object_create_anew mod_m13)
+      (objects_attach (player0) "" mod_m13 "")
+      (objects_detach (player0) mod_m13)
+      (ai_attach mod_m13 mod_marines/marines)
+      (object_create_anew mod_m14)
+      (objects_attach (player0) "" mod_m14 "")
+      (objects_detach (player0) mod_m14)
+      (ai_attach mod_m14 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 14)
+    (begin
+      (object_create_anew mod_m15)
+      (objects_attach (player0) "" mod_m15 "")
+      (objects_detach (player0) mod_m15)
+      (ai_attach mod_m15 mod_marines/marines)
+      (object_create_anew mod_m16)
+      (objects_attach (player0) "" mod_m16 "")
+      (objects_detach (player0) mod_m16)
+      (ai_attach mod_m16 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 16)
+    (begin
+      (object_create_anew mod_m17)
+      (objects_attach (player0) "" mod_m17 "")
+      (objects_detach (player0) mod_m17)
+      (ai_attach mod_m17 mod_marines/marines)
+      (object_create_anew mod_m18)
+      (objects_attach (player0) "" mod_m18 "")
+      (objects_detach (player0) mod_m18)
+      (ai_attach mod_m18 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 18)
+    (begin
+      (object_create_anew mod_m19)
+      (objects_attach (player0) "" mod_m19 "")
+      (objects_detach (player0) mod_m19)
+      (ai_attach mod_m19 mod_marines/marines)
+      (object_create_anew mod_m20)
+      (objects_attach (player0) "" mod_m20 "")
+      (objects_detach (player0) mod_m20)
+      (ai_attach mod_m20 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 20)
+    (begin
+      (object_create_anew mod_m21)
+      (objects_attach (player0) "" mod_m21 "")
+      (objects_detach (player0) mod_m21)
+      (ai_attach mod_m21 mod_marines/marines)
+      (object_create_anew mod_m22)
+      (objects_attach (player0) "" mod_m22 "")
+      (objects_detach (player0) mod_m22)
+      (ai_attach mod_m22 mod_marines/marines)
+    ))
+  (if (= mod_marines_slot 22)
+    (begin
+      (object_create_anew mod_m23)
+      (objects_attach (player0) "" mod_m23 "")
+      (objects_detach (player0) mod_m23)
+      (ai_attach mod_m23 mod_marines/marines)
+      (object_create_anew mod_m24)
+      (objects_attach (player0) "" mod_m24 "")
+      (objects_detach (player0) mod_m24)
+      (ai_attach mod_m24 mod_marines/marines)
+    ))
+)
+
+; --- F7: traer a tus pies los marines creados por F6 ----------------
+; Las ordenes de objeto mueven cosas que YA existen: el marine se
+; cuelga de la raiz del jugador (su posicion pasa a ser la del
+; jugador) y al soltarlo se queda ahi. Con eso F7 acerca de golpe
+; a los marines de F6 (mod_m01..mod_m24) y luego los manda a las
+; posiciones de tiro de tu sala, que es como vienen andando.
+;
+; Solo sirve para los marines de F6: los tres del principio salen
+; de (ai_place mod_marines/marines) y su objeto no tiene nombre en
+; el escenario, asi que no se pueden nombrar desde el script.
+; Si la ranura esta libre (aun no has creado ese marine) las dos
+; ordenes no hacen nada: comprueban el indice del objeto antes de
+; tocar nada (objects_scripting_attach / objects_scripting_detach).
+(script static void mod_marines_clump
+  (objects_attach (player0) "" mod_m01 "")
+  (objects_detach (player0) mod_m01)
+  (objects_attach (player0) "" mod_m02 "")
+  (objects_detach (player0) mod_m02)
+  (objects_attach (player0) "" mod_m03 "")
+  (objects_detach (player0) mod_m03)
+  (objects_attach (player0) "" mod_m04 "")
+  (objects_detach (player0) mod_m04)
+  (objects_attach (player0) "" mod_m05 "")
+  (objects_detach (player0) mod_m05)
+  (objects_attach (player0) "" mod_m06 "")
+  (objects_detach (player0) mod_m06)
+  (objects_attach (player0) "" mod_m07 "")
+  (objects_detach (player0) mod_m07)
+  (objects_attach (player0) "" mod_m08 "")
+  (objects_detach (player0) mod_m08)
+  (objects_attach (player0) "" mod_m09 "")
+  (objects_detach (player0) mod_m09)
+  (objects_attach (player0) "" mod_m10 "")
+  (objects_detach (player0) mod_m10)
+  (objects_attach (player0) "" mod_m11 "")
+  (objects_detach (player0) mod_m11)
+  (objects_attach (player0) "" mod_m12 "")
+  (objects_detach (player0) mod_m12)
+  (objects_attach (player0) "" mod_m13 "")
+  (objects_detach (player0) mod_m13)
+  (objects_attach (player0) "" mod_m14 "")
+  (objects_detach (player0) mod_m14)
+  (objects_attach (player0) "" mod_m15 "")
+  (objects_detach (player0) mod_m15)
+  (objects_attach (player0) "" mod_m16 "")
+  (objects_detach (player0) mod_m16)
+  (objects_attach (player0) "" mod_m17 "")
+  (objects_detach (player0) mod_m17)
+  (objects_attach (player0) "" mod_m18 "")
+  (objects_detach (player0) mod_m18)
+  (objects_attach (player0) "" mod_m19 "")
+  (objects_detach (player0) mod_m19)
+  (objects_attach (player0) "" mod_m20 "")
+  (objects_detach (player0) mod_m20)
+  (objects_attach (player0) "" mod_m21 "")
+  (objects_detach (player0) mod_m21)
+  (objects_attach (player0) "" mod_m22 "")
+  (objects_detach (player0) mod_m22)
+  (objects_attach (player0) "" mod_m23 "")
+  (objects_detach (player0) mod_m23)
+  (objects_attach (player0) "" mod_m24 "")
+  (objects_detach (player0) mod_m24)
+)
+
+
+; --- migracion por salas: DESACTIVADA -------------------------------
+; El seguimiento continuo lo hace ahora el vehiculo senuelo
+; (mod_marines_chase_loop), no la migracion a escuadrones vacios.
+; Se quito para liberar nodos de script (techo del motor retail).
+
+; --- metodo ANTIGUO (ai_place por sala): DESACTIVADO ---------------
+; Se conserva escrito y SIN llamar desde ningun sitio, solo como
+; referencia historica: colocaba 2 marines por pulsacion en las
+; posiciones de tiro de la sala (escuadrones sp_b1..sp_r2). Funciona,
+; pero siempre en puntos fijos del mapa y gastando escuadrones (el
+; maximo por encuentro es 64). F6 ya no lo usa: ahora los marines nacen
+; a tus pies (mod_marines_aqui). Los escuadrones sp_p1..sp_r2 se siguen
+; usando en la prueba de tipos de la tecla F9.
+; mod_marines_spawn: DESACTIVADO.
+;   Ya no se usa: F6 crea marines con mod_marines_aqui (objeto_create_anew
+;   + attach/detach al jugador + ai_attach), que los sitúa en tus pies
+;   en cualquier sala. El cuerpo de ai_place por sala se conserva como
+;   referencia historica pero no compila (ahorra nodos de script).
+
+; --- teclas -----------------------------------------------------
+; La tecla solo deja un numero en mod_marines_request. Aqui se copia a
+; mod_marines_accion y se limpia el pedido en el mismo instante: asi una
+; tecla sin rama (o una pulsacion repetida) no deja el script girando en
+; vacio ni se pierde la orden siguiente.
+(script continuous mod_marines_hotkey
+  (sleep_until (!= mod_marines_request 0) 1)
+  (set mod_marines_accion mod_marines_request)
+  (set mod_marines_request 0)
+  ; F6: dos marines nuevos a tus pies
+  (if (= mod_marines_accion 1)
+    (begin
+      ; sala actual en el instante de pulsar (sin esperar al vigilante)
+      (mod_marines_nearest)
+      (if (> mod_marines_cand 0)
+        (begin
+          (set mod_marines_zone mod_marines_cand)
+          (set mod_marines_stage mod_marines_cand)
+          (set mod_marines_pending 0)
+          (set mod_marines_pcount 0)))
+      (mod_marines_aqui)
+      ; reciclar ranuras: despues de mod_m24 volver a mod_m01
+      ; (object_create_anew borra el marine anterior de esa ranura,
+      ;  asi que no se pierden los slots, se reutilizan)
+      (if (>= mod_marines_slot 24)
+        (set mod_marines_slot 0)
+        (set mod_marines_slot (+ mod_marines_slot 2)))
+      (ai_force_active mod_marines 1)
+      (ai_allow_dormant mod_marines 0)
+      (sleep 2)
+      (ai_follow_target_players mod_marines)))
+  ; F7: venir aqui
+  ;   1) (mod_marines_nearest): en que sala estas ahora mismo
+  ;   2) (mod_marines_clump): los marines de F6 a tus pies
+  ;   3) (mod_marines_migrar_sala): y de ahi, a las posiciones de tiro
+  ;      de tu sala andando (la migracion manda)
+  (if (= mod_marines_accion 2)
+    (begin
+      (set mod_marines_ready 1)
+      (mod_marines_nearest)
+      (if (> mod_marines_cand 0)
+        (begin
+          (set mod_marines_zone mod_marines_cand)
+          (set mod_marines_stage mod_marines_cand)))
+      (mod_marines_clump)
+      (set mod_marines_unit_follow 0)
+      (sleep 1)
+      (ai_follow_target_players mod_marines)))
+  ; F8: interruptor del modo escolta (asiento bloqueado)
+  (if (= mod_marines_accion 8)
+    (begin
+      (set mod_marines_ready 1)
+      (if (= mod_marines_escort 0)
+        (begin
+          ; encender: crear el vehiculo pegado a ti y sentar a los 3
+          ; dummies en los 3 asientos para que nadie pueda subirse
+          (object_create_anew modlure)
+          (objects_attach (player0) "" modlure "")
+          ; ocultar el senuelo: escala 1% (invisible) y sin colision,
+          ; ademas el tag usa una copia del warthog sin sonido de motor
+          (object_set_scale modlure 0.01 0)
+          (object_set_collideable modlure 0)
+          (object_create_anew moddum01)
+          (object_create_anew moddum02)
+          (object_create_anew moddum03)
+          ; invisibles igual que el vehiculo: escala 1% (no afecta al
+          ; bloqueo de los asientos, que depende del parent_object_index)
+          (object_set_scale moddum01 0.01 0)
+          (object_set_scale moddum02 0.01 0)
+          (object_set_scale moddum03 0.01 0)
+          ; refuerzo: los dummies no colisionan, para que no traben a
+          ; los marines que vienen hacia el vehiculo; ademas el tag del
+          ; senuelo tiene flags.not_a_pathfinding_obstacle = 1
+          (object_set_collideable moddum01 0)
+          (object_set_collideable moddum02 0)
+          (object_set_collideable moddum03 0)
+          ; vitalidad maxima: si un dummy muriera, su asiento quedaria
+          ; libre y un marine podria subirse
+          (unit_set_maximum_vitality moddum01 100000 100000)
+          (unit_set_maximum_vitality moddum02 100000 100000)
+          (unit_set_maximum_vitality moddum03 100000 100000)
+          (unit_enter_vehicle moddum01 modlure "W-driver")
+          (unit_enter_vehicle moddum02 modlure "W-passenger")
+          (unit_enter_vehicle moddum03 modlure "W-gunner")
+          (set mod_marines_escort 1))
+        (begin
+          ; apagar: quitar el objetivo. Los marines dejan de caminar
+          ; hacia el y se quedan donde estan (no los sacamos de nada)
+          (object_destroy modlure)
+          (set mod_marines_escort 0)))))
+)
+
+; ============================================================
+; CAUSA REAL DE LA POSE T (diagnostico confirmado 17-nov-2026)
+;
+; Sintoma: todos los actores del encuentro aparecian en pose T,
+; quietos, sin animacion, y no reaccionaban a (ai_force_active)
+; ni a (ai_allow_dormant 0).
+;
+; Causa: el campo runtime_structure_bsp_reference_index del
+; encuentro. No es un campo del tag HEK (Invader lo muestra como
+; "unused"), se escribe al compilar el cache y dice A QUE BSP
+; pertenece el encuentro. En el mapa compilado mod_marines tenia
+; runtime = 4 (BSP a10d), heredado del struct que se copio para
+; crear el encuentro; la bahia criogenica es el BSP 0.
+;
+; Motor (OpenCE source/ai/encounters.c, encuentros retail):
+;   encounters_test_activation():
+;     if (runtime == NONE || runtime == global_structure_bsp_index)
+;          ...calcula clusters y activa...
+;     else active = FALSE;
+;   encounter_activate():
+;     if (runtime == NONE || runtime == global_structure_bsp_index)
+;          actor_set_active(actor, TRUE);
+;     (si no coincide, no hace NADA: el actor sigue dormido)
+;
+; Y un actor dormido implica objeto inactivo, y un objeto inactivo
+; no se simula: se queda en la pose base del modelo (T) y no anda.
+; Por eso ai_force_active no servia: la comprobacion de BSP va antes
+; y la anula.
+;
+; Comprobacion byte a byte (herramientas/ver-encuentros-cache.ps1):
+;   struct encounter = 176 bytes, runtime en +0x7E (int16)
+;   mapa retail  a10.map.orig : cryo_tech=0 crossfire=1 airlock=2 ... cryo_search=5
+;   mapa nuestro (antes)      : mod_marines=4   <-- mal
+;   mapa nuestro (ahora)      : mod_marines=-1  <-- NONE, vale en todo BSP
+;
+; Arreglo aplicado:
+;   1) encounters[39].flags.manual_bsp_index_specified = 1
+;      encounters[39].manual_bsp_index = 65535 (-1 = NONE)
+;      (invader-edit -S)
+;   2) herramientas/fijar-runtime-bsp.ps1 escribe el runtime real
+;      (+0x7E, big-endian en el tag) = -1, porque invader-edit no
+;      expone ese campo.
+;   Resultado verificado en el cache: runtime = -1.
+;
+; Nota para el futuro: si algun dia se quiere un encuentro atado a
+; un solo BSP, poner manual_bsp_index = indice del BSP (0 = a10).
+
+
+; ============================================================
+; REPLICACION A TODAS LAS MISIONES (18-nov-2026)
+; ============================================================
+; El mismo mod (F6 spawn, F7 juntar, F8 seguir con vehiculo
+; invisible y 3 dummies) se replico a los 10 mapas de campana
+; disponibles: a10, a30, a50, b30, b40, c10, c20, c40, d20, d40.
+;
+; Proceso automatico (aplicar-mod-mision.ps1):
+;   1) invader-extract de cada .map a Proyectos\<mision>\tags
+;   2) extraer-hsc-generico.ps1: lee el HSC original guardado
+;      dentro del tag (source_files[0].source)
+;   3) object_names: +28 nombres (24 ranuras, modlure, 3 dummies)
+;   4) +27 bipeds marine_armored no colocados, +1 warthog
+;      silencioso (copia de a10 sin sonido de motor), +1 placement
+;   5) encuentro mod_marines (squad "marines") con runtime=-1
+;   6) generar-bloque-generico.ps1: bloque HSC sin dependencias
+;      de volumenes de a10, se anade al HSC original
+;   7) invader-script, fijar-runtime-bsp, invader-build
+;   8) invader-bludgeon -T everything para reparar tags rotos
+;      de la extraccion (indices, rangos, lens flares)
+;
+; CRC finales instalados en Halo-PC\MAPS:
+;   a10 0xCEFEE480   a30 0x6796B4AB   a50 0xAA27A613
+;   b30 0x5AE2614F   b40 0xC53BCE57   c10 0xA61319E3
+;   c20 0xD8E18758   c40 0xDD8B768E   d20 0x92E6D826
+;   d40 0x0407D7A3
+; Los 10 verificados: encuentro mod_marines con runtime=-1 en cache.
+;
+; Nota: no habia archivos para a20, a40, b10, b20, c30, c50, d30.

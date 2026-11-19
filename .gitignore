@@ -1,0 +1,9 @@
+# Mapas compilados (binarios grandes)
+*.map
+*.map.orig
+
+# Backups y temporales de construccion
+*.bak*
+*.off
+_tmp/
+checkpoints/
